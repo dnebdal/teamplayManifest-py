@@ -28,6 +28,7 @@ import json
 from typing import Self
 import zipfile
 import os.path
+import re
 
 
 def try_nested_key(d, key_list, fallback=""):
@@ -37,6 +38,13 @@ def try_nested_key(d, key_list, fallback=""):
         except (KeyError, TypeError):
             return fallback
     return d
+
+
+def clean_for_filename(s):
+    s = s.encode("ASCII", "replace").decode("ASCII")
+    s = s.replace('?', '_')
+    s = re.sub("[^-_()a-zA-Z0-9]", "_", s)
+    return s
 
 
 class FileAttachmentList:
@@ -86,11 +94,10 @@ class FileAttachmentList:
 
     def __str__(self):
         text = ["\n  ".join((
-            '-> ' + f["Filename"],
+            "-> " + " " + f["Filename"],
             "   MIME: " + f["MIME"],
             "   Description: " + f["Description"]
-        )) for f
-            in self._files]
+        )) for f in self._files]
         return "\n".join(text)
 
 
@@ -207,6 +214,7 @@ class Manifest(dict):
             intent="order",
             authoredOn=self.authoredOn,
             focus=dict(reference=self.patientID),
+            encounter=dict(reference=self.encounter),
             requestedPerformer=[dict(reference=dict(reference=self.performer))]
         )
 
@@ -230,9 +238,45 @@ class Manifest(dict):
         ts = ts[:-2] + ':' + ts[-2:]
         return ts
 
+    def make_archive_name(self, filetype="zip"):
+        output = "RES" if self.status == "completed" else "NEW"
+
+        fn = ".".join([clean_for_filename(s) for s in
+                       (output, self.patientID, self.encounter,
+                        self.performer, datetime.now().strftime("%s"),
+                        filetype)
+                       ])
+        return fn
+
     @property
     def json(self) -> str:
         return json.dumps(self.__HL7_dict__(), indent=2)
+
+
+def packageManifest(man: Manifest):
+    filename = man.make_archive_name()
+    if man.status == "completed":
+        files = man.outputFiles.files
+    else:
+        files = man.inputFiles.files
+
+    filetest = [os.path.isfile(f) for f in files]
+    missing = [x[0] for x in zip(files, filetest) if x[1] is False]
+
+    if len(missing) > 0:
+        print("Some files specified in the manifest not found when trying to package:")
+        print(repr(missing))
+        return
+
+    print(f"Creating {filename}")
+    with zipfile.ZipFile(filename, 'w') as zout:
+        print("Adding MANIFEST.json")
+        zout.writestr("MANIFEST.json", man.json)
+        for fn in files:
+            print(f"Adding {fn}")
+            zout.write(fn)
+
+    print("Done.")
 
 
 if __name__ == "__main__":
@@ -252,7 +296,12 @@ if __name__ == "__main__":
     manifest_file = args.file
     if manifest_file.endswith(".zip"):
         zf = zipfile.ZipFile(manifest_file, mode='r')
-        manifest_file = zf.open("MANIFEST.json")
+        manifest_name = [f for f in zf.namelist() if f.lower() == "manifest.json"]
+        manifest_name.sort()
+        if len(manifest_name) > 1:
+            print(f"Found multiple manifests in {args.file}: {manifest_name}")
+            print(f"Trying {manifest_name[0]} (because it sorted first)")
+        manifest_file = zf.open(manifest_name[0])
 
     manifest = Manifest.from_file(manifest_file)
 
@@ -268,9 +317,10 @@ if __name__ == "__main__":
                 print("Trying to create a package from a manifest inside a package.")
                 print("If you really want this, extract the manifest and package it in two steps.")
                 exit(0)
+            packageManifest(manifest)
             exit(0)
         case 'extract':
-            if os.path.isfile("manifest.json"):
+            if os.path.isfile("MANIFEST.json"):
                 print("MANIFEST.json already exists in current directory. Will not overwrite.")
                 exit(1)
             with open("MANIFEST.json", "w") as mf:
