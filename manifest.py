@@ -253,7 +253,7 @@ class Manifest(dict):
         return json.dumps(self.__HL7_dict__(), indent=2)
 
 
-def packageManifest(man: Manifest):
+def package_manifest(man: Manifest):
     filename = man.make_archive_name()
     if man.status == "completed":
         files = man.outputFiles.files
@@ -317,7 +317,7 @@ if __name__ == "__main__":
                 print("Trying to create a package from a manifest inside a package.")
                 print("If you really want this, extract the manifest and package it in two steps.")
                 exit(0)
-            packageManifest(manifest)
+            package_manifest(manifest)
             exit(0)
         case 'extract':
             if os.path.isfile("MANIFEST.json"):
