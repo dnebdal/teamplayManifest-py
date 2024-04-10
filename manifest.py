@@ -269,6 +269,7 @@ def package_manifest(man: Manifest):
         return
 
     print(f"Creating {filename}")
+    man.zipfile = filename
     with zipfile.ZipFile(filename, 'w') as zout:
         print("Adding MANIFEST.json")
         zout.writestr("MANIFEST.json", man.json)
