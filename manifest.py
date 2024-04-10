@@ -277,6 +277,7 @@ def package_manifest(man: Manifest):
             zout.write(fn)
 
     print("Done.")
+    return(filename)
 
 
 if __name__ == "__main__":
