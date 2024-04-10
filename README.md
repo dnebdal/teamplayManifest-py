@@ -2,7 +2,7 @@
 Generate, parse, and package manifests describing input and results from Siemens Teamplay. For a description of the format and why it exists, see [teamplayManifest-common](https://github.com/dnebdal/teamplayManifest-common). There is also a corresponding R project, [teamplayManifestR](https://github.com/dnebdal/teamplayManifestR).
 
 # Installation
-It would be nice to turn this into a proper Python package, but for now just download (manifest.py)[https://github.com/dnebdal/teamplayManifest-py/raw/main/manifest.py] and put it in your project folder - or somewhere in your PATH if you plan to use it as a command-line tool.
+It would be nice to turn this into a proper Python package, but for now just download [manifest.py](https://github.com/dnebdal/teamplayManifest-py/raw/main/manifest.py) and put it in your project folder - or somewhere in your PATH if you plan to use it as a command-line tool.
 
 # Usage
 There are two main ways to use this code: Either import it into your own Python scripts, or run it as a command line tool.
