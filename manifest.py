@@ -30,8 +30,34 @@ import zipfile
 import os.path
 import re
 
+"""Functions to parse and generate Teamplay manifests, and a CLI tool.
+
+As described at https://github.com/dnebdal/teamplayManifest-common , the Siemens Teamplay system
+needs a way to store metadata next to data files. The Manifest class and helper functions in this file can 
+generate and read those Manifest files, update them to mark a job as done, and automatically package a zip file 
+containing a manifest and the files it refers to, using a standardized filename scheme.
+
+Used as a command line tool, it takes a verb and a manifest or zip file, and can show various information, extract just
+the manifest from a zip file, and given a manifest it can package it and the files mentioned in it to a zip file
+with a name following a standard scheme.
+
+Typical usage:
+
+from manifest import Manifest, package_manifest
+infiles = [
+  {'Filename':'methylation_0001.csv', 'Description':'Methylation', 'MIME':'text/csv'},
+  {'Filename':'vcf_0001.vcf', 'Description':'Mutation', 'MIME':'text/tab-separated-values'}
+]
+# These files are from "Patient-0001", taken at "End of Treatment", and are meant to be analysed 
+# in the Teamplay container called "OUS0001".  
+man = Manifest.new(patientID="Patient-0001", encounter="End of Treatment", performer="OUS0001", files=infiles)
+
+# This creates a zip file, assuming the csv and vcf files are in the current working directory
+package_manifest(man)
+"""
 
 def try_nested_key(d, key_list, fallback=""):
+    """Recursively look up keys in a nested dictionary; returns a fallback if it fails."""
     for k in key_list:
         try:
             d = d[k]
@@ -41,6 +67,7 @@ def try_nested_key(d, key_list, fallback=""):
 
 
 def clean_for_filename(s):
+    """Replace anything not ASCII alphanumerics or -_() with underscores"""
     s = s.encode("ASCII", "replace").decode("ASCII")
     s = s.replace('?', '_')
     s = re.sub("[^-_()a-zA-Z0-9]", "_", s)
@@ -48,13 +75,25 @@ def clean_for_filename(s):
 
 
 class FileAttachmentList:
+    """A list of files with some metadata.
+
+    Each file is a dictionary with three keys:
+    - Filename: A bare filename, no path or protocol.
+    - Description: What _is_ this file? Often an omic, like "Methylation".
+    - MIME: The MIME type, e.g. "text/plain".
+
+    This will ultimately be stored as an array of HL7 FHIR Attachment elements,
+    see  https://www.hl7.org/fhir/datatypes-definitions.html#Attachment .
+    """
     def __init__(self, files=None):
+        """Return a FileAttachmentList, optionally pre-filled with one or more files."""
         super().__init__()
         self._files = []
         if files is not None:
             self.insert(files)
 
     def insert(self, f) -> None:
+        """Insert one or more files. Accepts one dict, or an iterable containing multiple."""
         if not ('keys' in dir(f)):
             for i in f:
                 self.insert(i)
@@ -68,6 +107,7 @@ class FileAttachmentList:
         self._files.append(clean_f)
 
     def __len__(self):
+        """Return the number of files in the list"""
         return len(self._files)
 
     def __repr__(self):
@@ -75,14 +115,17 @@ class FileAttachmentList:
 
     @property
     def files(self):
+        """Just the file names"""
         return [f['Filename'] for f in self._files]
 
     @property
     def table(self):
+        """An array of dicts, one per file"""
         return self._files
 
     @property
     def HL7_table(self):
+        """Returns a carefully constructed dict representation that will serialize to valid HL7 FHIR JSON."""
         return [
             dict(
                 type=dict(text=f["Description"]),
@@ -93,6 +136,7 @@ class FileAttachmentList:
             for f in self._files]
 
     def __str__(self):
+        """Return a human-readable multiline presentation of the files in this list."""
         text = ["\n  ".join((
             "-> " + " " + f["Filename"],
             "   MIME: " + f["MIME"],
@@ -102,6 +146,23 @@ class FileAttachmentList:
 
 
 class Manifest(dict):
+    """A representation of a Teamplay manifest - a HL7 FHIR Task in JSON format.
+
+    A container for metadata about a job to be performed on Siemens Teamplay.
+    See https://github.com/dnebdal/teamplayManifest-common for more details.
+
+    Manifest objects can be constructed in a couple of ways:
+    - New, by providing all required information to .new()
+    - From an existing JSON file, with .from_file()
+    - From JSON text in a string, with .from_json()
+    - From a dictionary in the style the json module produces, with .from_parsed().
+
+    Given a manifest describing a job to be done (.state == "request") and a list of generated files,
+    it can be converted to a manifest describing a finished job with .mark_done() .
+
+    To get a JSON representation, use the .json property - or the package_manifest() helper method,
+    which lives outside the class.
+    """
     status = "requested"
     authoredOn = ""
     lastModified = ""
@@ -118,6 +179,7 @@ class Manifest(dict):
         self.authoredOn = Manifest.__HL7_timestamp__()
 
     def __fill_from_parsed(self, parsed: dict) -> Self:
+        """Return a manifest filled in from a dict, using the keys and nesting of the JSON format."""
         self.status = parsed["status"]
         self.authoredOn = parsed["authoredOn"]
         self.zipfile = try_nested_key(parsed, ("for", "reference"))
@@ -138,6 +200,7 @@ class Manifest(dict):
         return self
 
     def __str__(self) -> str:
+        """Return a human-readable string representation, including the input and output files (if any)."""
         input_files_str = str(self.inputFiles)
         output_files_str = str(self.outputFiles)
         if self.status == "completed":
@@ -160,12 +223,14 @@ class Manifest(dict):
         return res
 
     def __iter__(self):
+        """Returns the key/value pairs."""
         attrs = ["status", "authoredOn", "zipfile", "patientID", "encounter",
                  "performer", "inputFiles", "outputFiles"]
         return ((attr, self.__getattribute__(attr)) for attr in attrs)
 
     @classmethod
     def from_file(cls, filename) -> Self:
+        """Construct a Manifest object from the contents of a Manifest JSON file."""
         instance = cls()
         if 'read' in dir(filename):
             parsed = json.load(filename)
@@ -175,6 +240,7 @@ class Manifest(dict):
 
     @classmethod
     def from_json(cls, json_text) -> Self:
+        """Construct a Manifest object from a JSON string."""
         instance = cls()
         parsed = json.loads(json_text)
         return instance.__fill_from_parsed(parsed)
@@ -182,6 +248,16 @@ class Manifest(dict):
     # noinspection PyPep8Naming
     @classmethod
     def new(cls, patientID, encounter, performer, files):
+        """Construct a Manifest object from the required fields and a list of files.
+
+        - patientID: The name of the patient or sample to be analyzed.
+        - encounter: The timepoint/event the data is from.
+        - performer: The ID of the Teamplay analysis container to run on this data.
+        - files: A list of dictionaries describing the data files. Each dict must contain:
+            - Filename : A bare filename, no path or protocol.
+            - Description: A description of the file - "Methylation" or "CT scan slice"
+            - MIME: MIME type of the file, e.g. text/plain or image/tiff (see the web page or README)
+        """
         self = cls()
         self.patientID = patientID
         self.encounter = encounter
@@ -190,6 +266,7 @@ class Manifest(dict):
         return self
 
     def mark_done(self, out_files):
+        """Mark the task completed, set lastModified to now, and insert the given output files (see .new() )."""
         self.status = "completed"
         self.lastModified = Manifest.__HL7_timestamp__()
         self.outputFiles = FileAttachmentList(out_files)
@@ -197,6 +274,7 @@ class Manifest(dict):
 
     @property
     def __div_text__(self) -> str:
+        """Returns a HTML div describing the manifest. For internal use."""
         res = "<div xmlns='http://www.w3.org/1999/xhtml'>"
         res += "Output" if self.status == "completed" else "Input"
         res += f" task for {self.patientID}, created {self.authoredOn}"
@@ -204,6 +282,7 @@ class Manifest(dict):
         return res
 
     def __HL7_dict__(self):
+        """Return a dictionary encoding of the manifest that will encode to the proper JSON format."""
         res = dict(
             resourceType="Task",
             text=dict(
@@ -233,12 +312,14 @@ class Manifest(dict):
 
     @classmethod
     def __HL7_timestamp__(cls):
+        """Return a date/time string with the exact format HL7 FHIR wants."""
         tz = datetime.now(timezone.utc).astimezone().tzinfo
         ts = datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S%z")
         ts = ts[:-2] + ':' + ts[-2:]
         return ts
 
     def make_archive_name(self, filetype="zip"):
+        """Return a file name constructed from the manifest fields and the current time."""
         output = "RES" if self.status == "completed" else "NEW"
 
         fn = ".".join([clean_for_filename(s) for s in
@@ -250,10 +331,12 @@ class Manifest(dict):
 
     @property
     def json(self) -> str:
+        """A JSON serialisation of this manifest."""
         return json.dumps(self.__HL7_dict__(), indent=2)
 
 
 def package_manifest(man: Manifest):
+    """Package the manifest and the data files in it (inputFiles or outputFiles, depending) to a zip."""
     filename = man.make_archive_name()
     if man.status == "completed":
         files = man.outputFiles.files
@@ -281,6 +364,7 @@ def package_manifest(man: Manifest):
     return(filename)
 
 
+### The command line tool:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         prog="teamplayManifest",
