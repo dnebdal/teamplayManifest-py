@@ -31,7 +31,7 @@ To create a new manifest, you need a minimum set of fields; example values in **
 
 - Sample ID: **OUS-Patient-0001**
 - Timepoint the sample was collected at: **EOT**
-- Method/container you want to run: **OUS0001**
+- Method/container you want to run: **OUS-OMICS-PANC**
 - One or more input files, with description, filename, and MIME type
   
 For the files, I'll be using these:
@@ -47,7 +47,7 @@ infiles = [
   {'Filename':'vcf_0001.vcf', 'Description':'Mutation', 'MIME':'text/tab-separated-values'}
 ]
 
-mf = Manifest.new(patientID='OUS-Patient-0001', encounter='EOT', performer='OUS0001', files=infiles)
+mf = Manifest.new(patientID='OUS-Patient-0001', encounter='EOT', performer='OUS-OMICS-PANC', files=infiles)
 package_manifest(mf)
 ```
 
@@ -101,19 +101,19 @@ Using the package from the "new manifest" example above:
 ...   {'Filename':'methylation_0001.csv', 'Description':'Methylation', 'MIME':'text/csv'},
 ...   {'Filename':'vcf_0001.vcf', 'Description':'Mutation', 'MIME':'text/tab-separated-values'}
 ... ]
->>> mf = Manifest.new(patientID='OUS-Patient-0001', encounter='EOT', performer='OUS0001', files=infiles)
+>>> mf = Manifest.new(patientID='OUS-Patient-0001', encounter='EOT', performer='OUS-OMICS-PANC', files=infiles)
 >>> package_manifest(mf)
-Creating NEW.OUS-Patient-0001.EOT.OUS0001.1712756217.zip
+Creating NEW.OUS-Patient-0001.EOT.OUS-OMICS-PANC.1712756217.zip
 Adding MANIFEST.json
 Adding methylation_0001.csv
 Adding vcf_0001.vcf
 Done.
 >>>
 
-~/test$ python3 manifest.py printPerformer NEW.OUS-Patient-0001.EOT.OUS0001.1712756217.zip 
+~/test$ python3 manifest.py printPerformer NEW.OUS-Patient-0001.EOT.OUS-OMICS-PANC.1712756217.zip 
 OUS0001
-~/test$ python3 manifest.py printInfo NEW.OUS-Patient-0001.EOT.OUS0001.1712756217.zip 
-Manifest for [OUS-Patient-0001] @ [EOT] on [OUS0001]
+~/test$ python3 manifest.py printInfo NEW.OUS-Patient-0001.EOT.OUS-OMICS-PANC.1712756217.zip 
+Manifest for [OUS-Patient-0001] @ [EOT] on [OUS-OMICS-PANC]
 Status   requested
 Created  2024-04-10T15:36:56+02:00
 [ Input ]
