@@ -25,7 +25,6 @@
 import argparse
 from datetime import datetime, timezone
 import json
-from typing import Self
 import zipfile
 import os.path
 import re
@@ -92,7 +91,7 @@ class FileAttachmentList:
         if files is not None:
             self.insert(files)
 
-    def insert(self, f) -> None:
+    def insert(self, f):
         """Insert one or more files. Accepts one dict, or an iterable containing multiple."""
         if not ('keys' in dir(f)):
             for i in f:
@@ -178,7 +177,7 @@ class Manifest(dict):
         super().__init__()
         self.authoredOn = Manifest.__HL7_timestamp__()
 
-    def __fill_from_parsed(self, parsed: dict) -> Self:
+    def __fill_from_parsed(self, parsed: dict):
         """Return a manifest filled in from a dict, using the keys and nesting of the JSON format."""
         self.status = parsed["status"]
         self.authoredOn = parsed["authoredOn"]
@@ -199,7 +198,7 @@ class Manifest(dict):
                 for a in parsed["output"]])
         return self
 
-    def __str__(self) -> str:
+    def __str__(self):
         """Return a human-readable string representation, including the input and output files (if any)."""
         input_files_str = str(self.inputFiles)
         output_files_str = str(self.outputFiles)
@@ -229,7 +228,7 @@ class Manifest(dict):
         return ((attr, self.__getattribute__(attr)) for attr in attrs)
 
     @classmethod
-    def from_file(cls, filename) -> Self:
+    def from_file(cls, filename):
         """Construct a Manifest object from the contents of a Manifest JSON file."""
         instance = cls()
         if 'read' in dir(filename):
@@ -239,7 +238,7 @@ class Manifest(dict):
         return instance.__fill_from_parsed(parsed)
 
     @classmethod
-    def from_json(cls, json_text) -> Self:
+    def from_json(cls, json_text):
         """Construct a Manifest object from a JSON string."""
         instance = cls()
         parsed = json.loads(json_text)
@@ -273,7 +272,7 @@ class Manifest(dict):
         return self
 
     @property
-    def __div_text__(self) -> str:
+    def __div_text__(self):
         """Returns a HTML div describing the manifest. For internal use."""
         res = "<div xmlns='http://www.w3.org/1999/xhtml'>"
         res += "Output" if self.status == "completed" else "Input"
@@ -330,7 +329,7 @@ class Manifest(dict):
         return fn
 
     @property
-    def json(self) -> str:
+    def json(self):
         """A JSON serialisation of this manifest."""
         return json.dumps(self.__HL7_dict__(), indent=2)
 
