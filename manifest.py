@@ -55,6 +55,8 @@ man = Manifest.new(patientID="Patient-0001", encounter="End of Treatment", perfo
 package_manifest(man)
 """
 
+DICOM_KEY = "Digital Imaging and Communications in Medicine module (core metadata concept)"
+
 def try_nested_key(d, key_list, fallback=""):
     """Recursively look up keys in a nested dictionary; returns a fallback if it fails."""
     for k in key_list:
@@ -72,6 +74,35 @@ def clean_for_filename(s):
     s = re.sub("[^-_()a-zA-Z0-9]", "_", s)
     return s
 
+def wrap_DICOM(DICOM):
+    """Wrap a DICOM reference so it JSON encodes to a valid input array"""
+    return [dict(
+            type = dict(text = DICOM_KEY),
+            valueReference = dict(identifier = dict(value = DICOM))
+           ),]
+
+def tasteInput(parsed):
+    """
+    Look at a parsed manifest and return a dict with two entries:
+    - DICOM: The DICOM reference, if any
+    - FAL: The input file list as a FileAttachmentList
+
+    One of the two will be None.
+    If the input is empty, DICOM is None and FAL is an empty FileAttachmentList.
+    """
+    if len(parsed["input"]) == 0:
+        return []
+
+    if try_nested_key(parsed, ("input", 0, "type", "text")) == DICOM_KEY:
+        dicom = try_nested_key(parsed, ("input", 0, "valueReference", "identifier", "value"))
+        return {'DICOM':dicom, 'FAL':None}
+    else:
+        fal = FileAttachmentList([
+                dict(Filename=a["valueAttachment"]["url"].removeprefix("file://"),
+                    MIME=a["valueAttachment"]["contentType"],
+                    Description=a["type"]["text"])
+                for a in parsed["input"]])
+        return {'DICOM':None, 'FAL':fal}
 
 class FileAttachmentList:
     """A list of files with some metadata.
@@ -170,6 +201,7 @@ class Manifest(dict):
     encounter = ""
     performer = ""
     ts = ""
+    DICOM_ref = None
     inputFiles = FileAttachmentList()
     outputFiles = FileAttachmentList()
 
@@ -185,11 +217,12 @@ class Manifest(dict):
         self.patientID = try_nested_key(parsed, ("focus", "reference"))
         self.encounter = try_nested_key(parsed, ("encounter", "reference"))
         self.performer = try_nested_key(parsed, ("requestedPerformer", 0, "reference", "reference"))
-        self.inputFiles = FileAttachmentList([
-            dict(Filename=a["valueAttachment"]["url"].removeprefix("file://"),
-                 MIME=a["valueAttachment"]["contentType"],
-                 Description=a["type"]["text"])
-            for a in parsed["input"]])
+
+        input = tasteInput(parsed)
+        if not input['DICOM'] is None:
+            self.DICOM_ref = input['DICOM']
+        else:
+            self.inputFiles = input['FAL']
         if self.status == "completed":
             self.outputFiles = FileAttachmentList([
                 dict(Filename=a["valueAttachment"]["url"].removeprefix("file://"),
@@ -200,7 +233,10 @@ class Manifest(dict):
 
     def __str__(self):
         """Return a human-readable string representation, including the input and output files (if any)."""
-        input_files_str = str(self.inputFiles)
+        if self.DICOM_ref is None:
+            input_files_str = str(self.inputFiles)
+        else:
+            input_files_str = f"DICOM reference: {self.DICOM_ref}"
         output_files_str = str(self.outputFiles)
         if self.status == "completed":
             res = '\n'.join([
@@ -246,8 +282,8 @@ class Manifest(dict):
 
     # noinspection PyPep8Naming
     @classmethod
-    def new(cls, patientID, encounter, performer, files):
-        """Construct a Manifest object from the required fields and a list of files.
+    def new(cls, patientID, encounter, performer, files=None, DICOM=None):
+        """Construct a Manifest object from the required fields and a list of files or a DICOM reference.
 
         - patientID: The name of the patient or sample to be analyzed.
         - encounter: The timepoint/event the data is from.
@@ -256,12 +292,20 @@ class Manifest(dict):
             - Filename : A bare filename, no path or protocol.
             - Description: A description of the file - "Methylation" or "CT scan slice"
             - MIME: MIME type of the file, e.g. text/plain or image/tiff (see the web page or README)
+        - DICOM: A DICOM reference. Can not be combined with files.
         """
+        if (files is None) == (DICOM is None) :
+            print("Provide either files or DICOM")
+            raise ValueError("Provide exactly one of files or DICOM")
+        
         self = cls()
         self.patientID = patientID
         self.encounter = encounter
         self.performer = performer
-        self.inputFiles = FileAttachmentList(files)
+        if (files is None):
+            self.DICOM_ref = DICOM
+        else:
+            self.inputFiles = FileAttachmentList(files)
         return self
 
     def mark_done(self, out_files):
@@ -277,6 +321,8 @@ class Manifest(dict):
         res = "<div xmlns='http://www.w3.org/1999/xhtml'>"
         res += "Output" if self.status == "completed" else "Input"
         res += f" task for {self.patientID}, created {self.authoredOn}"
+        if not self.DICOM_ref is None:
+            res += f", DICOM reference: {self.DICOM_ref}"
         res += "</div>"
         return res
 
@@ -298,7 +344,9 @@ class Manifest(dict):
 
         res["for"] = dict(reference=self.zipfile)
 
-        if len(self.inputFiles) > 0:
+        if not self.DICOM_ref is None:
+            res["input"] = wrap_DICOM(self.DICOM_ref)
+        elif len(self.inputFiles) > 0:
             res["input"] = self.inputFiles.HL7_table
 
         if len(self.outputFiles) > 0:
@@ -340,7 +388,10 @@ def package_manifest(man: Manifest):
     if man.status == "completed":
         files = man.outputFiles.files
     else:
-        files = man.inputFiles.files
+        if man.DICOM_ref is None:
+            files = man.inputFiles.files
+        else:
+            files = []
 
     filetest = [os.path.isfile(f) for f in files]
     missing = [x[0] for x in zip(files, filetest) if x[1] is False]
@@ -370,6 +421,7 @@ if __name__ == "__main__":
         description="Parse and package teamplay manifests"
     )
     parser.add_argument('verb', choices=[
+        'printDICOMRef',
         'printPerformer',
         'printInfo',
         'package',
@@ -391,6 +443,9 @@ if __name__ == "__main__":
     manifest = Manifest.from_file(manifest_file)
 
     match args.verb:
+        case "printDICOMRef":
+            if not manifest.DICOM_ref is None:
+                print(manifest.DICOM_ref)
         case "printPerformer":
             print(manifest.performer)
             exit(0)
