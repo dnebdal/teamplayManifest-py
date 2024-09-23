@@ -382,7 +382,9 @@ class Manifest(dict):
         return json.dumps(self.__HL7_dict__(), indent=2)
 
 
-def package_manifest(man: Manifest):
+
+
+def package_manifest(man: Manifest, quiet=False):
     """Package the manifest and the data files in it (inputFiles or outputFiles, depending) to a zip."""
     filename = man.make_archive_name()
     if man.status == "completed":
@@ -401,16 +403,19 @@ def package_manifest(man: Manifest):
         print(repr(missing))
         return
 
-    print(f"Creating {filename}")
+    if(not quiet):
+        print(f"Creating {filename}")
     man.zipfile = filename
     with zipfile.ZipFile(filename, 'w') as zout:
-        print("Adding MANIFEST.json")
+        if(not quiet):
+            print("Adding MANIFEST.json")
         zout.writestr("MANIFEST.json", man.json)
         for fn in files:
-            print(f"Adding {fn}")
+            if(not quiet):
+                print(f"Adding {fn}")
             zout.write(fn)
-
-    print("Done.")
+    if(not quiet):
+        print("Done.")
     return(filename)
 
 
